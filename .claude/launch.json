@@ -1,0 +1,2 @@
+{ "version":"0.0.1",
+  "configurations":[{ "name":"redo-2026","runtimeExecutable":"./serve.sh","runtimeArgs":["8172"],"port":8172,"autoPort":true }] }
