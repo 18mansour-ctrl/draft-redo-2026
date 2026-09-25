@@ -13,15 +13,24 @@ const NICK_PICKS = REAL.filter(p => p.mgr === NICK).map(p => p.n);
    drafted in August. Low numbers take the best man left. */
 const TAU = {Dane:0.20, Abdur:0.45, Max:0.32, Olivia:0.18, Austin:0.15, Tyler:0.28, Tommy:0.12, NICK:0.10};
 
-/* ===== rng: deterministic for a given set of Nick's choices ===== */
-function seedFrom(choices){
- let h = 2166136261;
- Object.keys(choices).sort((a,b)=>a-b).forEach(k=>{
-  const s = k + ':' + choices[k];
-  for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }});
- return h >>> 0;
-}
-function rngFrom(seed){ let s = seed || 1; return () => { s = (Math.imul(s,1664525) + 1013904223) >>> 0; return s/4294967296; }; }
+/* ===== rng =====
+   The seed is a constant, and that is the whole point.
+
+   It used to be hashed from the set of Nick's choices, which read as the
+   sensible way to satisfy the spec's "deterministic for a given nickChoices".
+   It is not. Hashing the whole set means adding a choice at pick 51 changes the
+   seed, which changes every rival fallback roll from pick 1 onward. A rival
+   forced off his pick at 4 would take somebody else, that would cascade, and it
+   could take a player Nick had already kept at 30 -- so answering a pick in the
+   sixth round threw him back to the fourth. Measured: answering 51 moved pick 4.
+
+   With a fixed seed the random stream is identical on every run, and because
+   the loop only ever moves forward, the number of draws taken before pick N
+   depends only on the picks before N. Nothing Nick decides at 51 can reach back
+   and change 4. Same choices still give the same draft, which is what the spec
+   actually asked for. */
+const SEED = 20260824;
+function rngFrom(){ let s = SEED; return () => { s = (Math.imul(s,1664525) + 1013904223) >>> 0; return s/4294967296; }; }
 
 /* ===== roster rules ===== */
 function counts(roster){ const c={QB:0,RB:0,WR:0,TE:0,K:0,DEF:0}; roster.forEach(p=>c[p.pos]++); return c; }
@@ -79,7 +88,7 @@ function choose(mgr, avail, roster, round, rnd){
    rival forced off his real fourth-round pick still takes his real fifth. */
 function redo(nickChoices){
  const choices = nickChoices || {};
- const rnd = rngFrom(seedFrom(choices));
+ const rnd = rngFrom();
  const taken = new Set(), avail = new Set(PLAYERS.map(p=>p.id));
  const rosters = {}; ORDER.forEach(m => rosters[m] = []);
  const board = [], ripples = []; let blocked = null;

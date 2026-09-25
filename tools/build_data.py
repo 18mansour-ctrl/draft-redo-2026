@@ -62,9 +62,13 @@ for p in picks:
     drafted[p['player_id']] = p
 POS = {'QB','RB','WR','TE','K','DEF'}
 pool = set(drafted)
+# Sleeper keeps retired players in its list with `active: true` and a legacy
+# search_rank, so Tom Brady, Gronkowski and Todd Gurley were all showing up as
+# draftable. Requiring a current NFL team is what actually filters them.
 extra = sorted((v for k, v in allp.items()
                 if k not in drafted and v.get('position') in POS
-                and v.get('search_rank') is not None and v.get('search_rank') < 400),
+                and v.get('team') and v.get('active')
+                and v.get('search_rank') is not None and v.get('search_rank') < 700),
                key=lambda v: v['search_rank'])
 for v in extra[:200]:
     pool.add(v['player_id'])

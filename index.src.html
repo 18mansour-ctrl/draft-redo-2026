@@ -130,7 +130,22 @@ button{background:none;border:0;padding:0;cursor:pointer;touch-action:manipulati
 .spane{display:none}.spane.on{display:block}
 
 /* filter pills: the live one is a filled white disc, the rest are outlines */
-.filters{display:flex;align-items:center;gap:9px;padding:12px 14px;overflow-x:auto;flex:none}
+/* your seventeen picks, so you can always see where you are and go back on
+   purpose instead of being dragged forward one at a time */
+.mine{display:flex;gap:6px;padding:11px 12px 3px;overflow-x:auto;flex:none;
+ -webkit-overflow-scrolling:touch}
+.mchip{flex:none;min-width:74px;height:46px;padding:0 9px;border-radius:11px;background:var(--panel2);
+ display:grid;place-content:center;gap:2px;text-align:left;transition:background .14s}
+.mchip b{font-size:10.5px;font-weight:700;letter-spacing:.04em;color:var(--dim2);display:block}
+.mchip em{font-style:normal;font-size:13px;font-weight:700;letter-spacing:-.02em;display:block;
+ white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70px;color:var(--txt2)}
+.mchip.open{background:var(--panel3)}
+.mchip.open b{color:var(--dim)}
+.mchip.here{background:var(--grn)}
+.mchip.here b,.mchip.here em{color:var(--ink)}
+.mchip.changed em{color:var(--cyan)}
+.mchip.here.changed em{color:var(--ink)}
+.filters{display:flex;align-items:center;gap:9px;padding:9px 14px 12px;overflow-x:auto;flex:none}
 .fsearch{width:46px;height:46px;border-radius:50%;flex:none;display:grid;place-items:center;
  color:var(--dim);box-shadow:inset 0 0 0 1px var(--line2)}
 .fsearch svg{width:19px;height:19px}
@@ -178,8 +193,9 @@ button{background:none;border:0;padding:0;cursor:pointer;touch-action:manipulati
 
 /* the pinned "who you really took" row */
 .keeprow{background:var(--panel2);border-bottom:1px solid var(--line)}
-.stopnote{margin:12px 12px 4px;padding:12px 14px;border-radius:12px;background:var(--panel2);
- font-size:13.5px;line-height:1.5;color:var(--txt2)}
+.stopnote{margin:10px 12px 4px;padding:12px 14px;border-radius:12px;background:var(--panel2);
+ font-size:13.5px;line-height:1.55;color:var(--dim)}
+.stopnote b{color:var(--txt);font-weight:700}
 .keephd{padding:13px 12px 7px;font-family:var(--cond);font-size:11.5px;font-weight:700;
  letter-spacing:.11em;text-transform:uppercase;color:var(--dim2)}
 .keeprow{position:relative}
@@ -256,6 +272,7 @@ button{background:none;border:0;padding:0;cursor:pointer;touch-action:manipulati
  </nav>
  <div class="sbody" id="sbody">
   <div class="spane on" data-s="players">
+   <div class="mine" id="mine"></div>
    <div class="filters" id="filters"></div>
    <div class="srchwrap" id="srchwrap" hidden><input id="q" type="search" placeholder="Search players" aria-label="Search players"></div>
    <div id="pool"></div>
@@ -294,11 +311,18 @@ const face = p => { const u = HEADS[p.name];
 /* ===== state ===== */
 let choices = {};
 try { const s = localStorage.getItem('redo26.choices'); if(s) choices = JSON.parse(s) || {}; } catch(e){}
-let R = null, tab = 'players', filter = 'ALL', query = '', FRESH = null;
+let R = null, tab = 'players', filter = 'ALL', query = '', FRESH = null, editing = null;
 const save = () => { try { localStorage.setItem('redo26.choices', JSON.stringify(choices)); } catch(e){} };
 
 /* the pick Nick is deciding: the first of his that has no answer yet */
-function openPick(){ return R && R.blocked ? R.blocked.n : null; }
+/* The pick being decided. Normally the one the engine stopped on, but you can
+   tap any of your seventeen in the strip and go back to it on purpose. */
+function openPick(){
+ if(editing !== null) return editing;
+ return R && R.blocked ? R.blocked.n : null;
+}
+/* the first pick with no answer yet, which is where "next" lands */
+function firstUnanswered(){ for(const n of NICK_PICKS) if(choices[n] === undefined) return n; return null; }
 const realAt = n => REAL.find(p => p.n === n);
 
 function run(){ R = redo(choices); render(); }
@@ -346,9 +370,10 @@ function renderBoard(){
 /* ===== the sheet ===== */
 function renderRibbon(){
  const open = openPick(), el = $('#ribbon');
- const done = Object.keys(choices).filter(k => choices[k] !== undefined).length;
- if(open === null){ el.className = 'ribbon done'; el.textContent = 'Redo complete'; }
- else { el.className = 'ribbon live'; el.textContent = `Your pick ${rd(open)} · ${done} of ${NICK_PICKS.length}`; }
+ const done = NICK_PICKS.filter(n => choices[n] !== undefined).length;
+ if(open === null){ el.className = 'ribbon done'; el.textContent = `Redo complete · ${done} of ${NICK_PICKS.length}`; }
+ else { el.className = 'ribbon live';
+  el.textContent = (editing !== null && choices[open] !== undefined ? 'Changing ' : 'Your pick ') + rd(open) + ` · ${done} of ${NICK_PICKS.length}`; }
  $('#leagueName').textContent = META.league + ' ' + META.season;
 }
 function poolRows(){
@@ -359,6 +384,20 @@ function poolRows(){
  else if(filter !== 'ALL') rows = rows.filter(p => p.pos === filter);
  if(query) rows = rows.filter(p => p.name.toLowerCase().includes(query));
  return rows.sort((a, b) => a.aug - b.aug);
+}
+function renderMine(){
+ const cur = openPick(), next = firstUnanswered();
+ $('#mine').innerHTML = NICK_PICKS.map(n => {
+  const b = R.board.find(x => x.n === n);
+  const answered = choices[n] !== undefined;
+  const here = n === cur;
+  const who = b ? lastOf(BY_ID[b.id]) : (answered ? '—' : '·');
+  return `<button class="mchip${here?' here':''}${!answered?' open':''}${b && b.changed?' changed':''}" data-edit="${n}">
+    <b>${rd(n)}</b><em>${esc(who)}</em></button>`;
+ }).join('');
+ $$('#mine [data-edit]').forEach(b => b.addEventListener('click', () => editPick(+b.dataset.edit)));
+ const here = $('#mine .mchip.here');
+ if(here) here.scrollIntoView({block:'nearest', inline:'center'});
 }
 function renderFilters(){
  const open = openPick();
@@ -407,10 +446,14 @@ function renderPool(){
  const canKeep = !taken.has(real.id) && legal(R.rosters.NICK, real);
  const rows = poolRows().filter(p => p.id !== real.id);
  let head = '';
- if(bl && bl.reason === 'gone')
-  head = `<p class="stopnote">You cannot keep ${esc(BY_ID[bl.id].name)} here. ${esc(teamName(bl.tookBy)||'Someone')} has him now, because of a change you made earlier.</p>`;
+ const cause = () => { const c = NICK_PICKS.filter(n => n < open && R.board.find(b => b.n === n && b.changed)).pop();
+  return c ? ` Your change at ${rd(c)} did it.` : ''; };
+ if(editing !== null && choices[open] !== undefined)
+  head = `<p class="stopnote">Changing ${rd(open)} again. You have ${esc(BY_ID[(R.board.find(b=>b.n===open)||{}).id] ? BY_ID[R.board.find(b=>b.n===open).id].name : 'nobody')} here now. Everything after this pick replays.</p>`;
+ else if(bl && bl.reason === 'gone')
+  head = `<p class="stopnote"><b>${esc(BY_ID[bl.id].name)} is gone.</b> ${esc(teamName(bl.tookBy)||'Someone')} has him, so you cannot keep him at ${rd(open)}.${cause()} Pick again here and the rest of your draft carries on.</p>`;
  else if(bl && bl.reason === 'limit')
-  head = `<p class="stopnote">You cannot keep ${esc(BY_ID[bl.id].name)} here. That would be your ${(CAP[bl.pos]||0)+1}${bl.pos==='QB'?'th quarterback and the 2026 draft allowed '+QBLIMIT:'nd '+bl.pos+' and the draft allowed '+(CAP[bl.pos]||0)}.</p>`;
+  head = `<p class="stopnote"><b>That would be one ${bl.pos} too many.</b> Keeping ${esc(BY_ID[bl.id].name)} at ${rd(open)} gives you ${(CAP[bl.pos]||0)+1} at ${bl.pos} and the 2026 draft allowed ${CAP[bl.pos]||0}.${cause()} Pick again here.</p>`;
  $('#pool').innerHTML = head
    + (canKeep ? `<p class="keephd">You really took, at ${rd(open)}</p>` + rowFor(real, 'keep') : '')
    + rows.slice(0, 120).map(p => rowFor(p)).join('');
@@ -420,9 +463,11 @@ function take(id){
  const open = openPick(); if(open === null) return;
  const real = realAt(open);
  choices[open] = (id === real.playerId) ? 'keep' : id;
+ editing = null;
  FRESH = id; save(); run(); setTimeout(() => { FRESH = null; }, 500);
  $('#sbody').scrollTop = 0;
 }
+function editPick(n){ editing = n; render(); $('#sbody').scrollTop = 0; }
 
 /* ===== the roster page ===== */
 const SLOTLABEL = {QB:'QB',RB:'RB',WR:'WR',TE:'TE',FLEX:'WRT',SF:'WRTQ',K:'K',DEF:'DEF'};
@@ -550,11 +595,11 @@ $$('#stabs button').forEach(b => b.addEventListener('click', () => {
 $('#q').addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); renderPool(); });
 $('#resetBtn').addEventListener('click', () => {
  if(!Object.keys(choices).length) return;
- choices = {}; save(); run(); });
+ choices = {}; editing = null; save(); run(); });
 
 function render(){
  renderRibbon(); renderBoard();
- if(tab === 'players'){ renderFilters(); renderPool(); }
+ if(tab === 'players'){ renderMine(); renderFilters(); renderPool(); }
  else if(tab === 'team') renderTeam();
  else if(tab === 'ripples') renderRipples();
  else renderGrade();
